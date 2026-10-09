@@ -8,7 +8,7 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root{
-    --s: min(78vw, 340px, 50vh);          /* размер шара */
+    --s: min(74vw, 320px, 44vh);          /* размер шара */
     --w: calc(var(--s) * 0.52);           /* размер окошка */
     --accent: #3d6bff;
     --accent-2: #1d3bd1;
@@ -51,7 +51,7 @@
     font-size:clamp(22px,6vw,30px);color:#c9d3ff;letter-spacing:.02em;
   }
   .title-big{
-    font-weight:900;font-size:clamp(54px,17vw,84px);letter-spacing:.04em;margin-top:2px;
+    font-weight:900;font-size:clamp(44px,14vw,72px);letter-spacing:.04em;margin-top:2px;
     background:linear-gradient(180deg,#8fb0ff 0%,#3d6bff 45%,#1a2fa8 100%);
     -webkit-background-clip:text;background-clip:text;color:transparent;
     filter:drop-shadow(0 6px 24px rgba(61,107,255,.45));
@@ -198,6 +198,37 @@
     text-transform:uppercase;line-height:1.1;max-width:58%;
     transform:rotate(-8deg);box-shadow:0 8px 24px rgba(0,0,0,.35);
     transition:opacity .35s, transform .35s;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+    overflow-wrap:anywhere;
+  }
+
+  /* ---------- поле для вопроса ---------- */
+  .ask{
+    display:flex;align-items:center;gap:8px;width:min(100%,360px);
+    padding:5px 5px 5px 18px;border-radius:999px;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    transition:border-color .2s, background .2s;
+  }
+  .ask:focus-within{border-color:rgba(130,165,255,.7);background:rgba(255,255,255,.12)}
+  .ask input{
+    flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--text);
+    font-family:inherit;font-size:16px;font-weight:500;   /* 16px — чтобы iOS не зумил */
+    -webkit-user-select:text;user-select:text;touch-action:auto;
+  }
+  .ask input::placeholder{color:var(--muted)}
+  .ask button{
+    flex:none;width:40px;height:40px;border:0;border-radius:50%;cursor:pointer;
+    display:grid;place-items:center;color:#fff;
+    background:linear-gradient(180deg,var(--accent),var(--accent-2));
+    box-shadow:0 4px 14px rgba(61,107,255,.45);transition:transform .15s, opacity .2s;
+  }
+  .ask button:active{transform:scale(.92)}
+  .ask button:disabled{opacity:.45}
+  .ask.error{animation:nope .4s}
+  @keyframes nope{
+    20%{transform:translateX(-8px)}40%{transform:translateX(7px)}
+    60%{transform:translateX(-5px)}80%{transform:translateX(3px)}
   }
   .question.fade{opacity:0;transform:rotate(-8deg) translateY(-6px)}
 
@@ -208,7 +239,7 @@
   }
   .hint b{color:var(--text);font-weight:600}
   .btn{
-    border:0;border-radius:14px;padding:12px 22px;font:600 15px/1 inherit;color:#fff;
+    border:0;border-radius:14px;padding:12px 22px;font-family:inherit;font-size:15px;font-weight:600;color:#fff;
     background:linear-gradient(180deg,var(--accent),var(--accent-2));
     box-shadow:0 8px 24px rgba(61,107,255,.4);cursor:pointer;display:none;
   }
@@ -223,6 +254,17 @@
       <div class="title-small">магический</div>
       <div class="title-big">ШАР</div>
     </header>
+
+    <form class="ask" id="askForm" autocomplete="off">
+      <input id="qInput" type="text" maxlength="80" enterkeyhint="send"
+             placeholder="Напиши свой вопрос…" aria-label="Твой вопрос">
+      <button type="submit" id="askBtn" aria-label="Спросить">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 19V5M5 12l7-7 7 7"/>
+        </svg>
+      </button>
+    </form>
 
     <div class="stage" id="stage">
       <div class="glow"></div>
@@ -254,7 +296,7 @@
       </div>
     </div>
 
-    <div class="hint" id="hint">Задай вопрос про себя и <b>потряси телефон</b><br>или нажми на шар</div>
+    <div class="hint" id="hint">Напиши вопрос или задай его про себя,<br>а потом <b>потряси телефон</b> или нажми на шар</div>
     <button class="btn" id="permBtn">Разрешить датчик движения</button>
   </main>
 
@@ -319,6 +361,7 @@
   const $ = (id) => document.getElementById(id);
   const stage = $('stage'), ball = $('ball'), die = $('die'), answerEl = $('answer');
   const hint = $('hint'), permBtn = $('permBtn'), questionEl = $('question');
+  const askForm = $('askForm'), qInput = $('qInput'), askBtn = $('askBtn');
 
   // звёзды
   const sky = $('sky');
@@ -343,15 +386,31 @@
     bubbles.appendChild(b);
   }
   // меняющиеся вопросы-примеры
-  let qi = 0;
-  setInterval(() => {
+  let qi = 0, userQuestion = null;
+  function showQuestion(text) {
     questionEl.classList.add('fade');
     setTimeout(() => {
-      qi = (qi + 1) % QUESTIONS.length;
-      questionEl.textContent = QUESTIONS[qi];
+      questionEl.textContent = text;
       questionEl.classList.remove('fade');
     }, 380);
+  }
+  setInterval(() => {
+    if (userQuestion) return;     // свой вопрос уже задан — примеры больше не крутим
+    qi = (qi + 1) % QUESTIONS.length;
+    showQuestion(QUESTIONS[qi]);
   }, 4500);
+
+  // забираем вопрос из поля (если там что-то написано)
+  function takeQuestion() {
+    let q = qInput.value.trim().replace(/\s+/g, ' ');
+    if (!q) return false;
+    if (!/[?？]$/.test(q)) q += '?';
+    userQuestion = q;
+    showQuestion(q);
+    qInput.value = '';
+    qInput.blur();                // прячем клавиатуру, чтобы был виден шар
+    return true;
+  }
 
   /* ================== логика шара ================== */
   let busy = false, lastIdx = -1;
@@ -370,6 +429,8 @@
   function ask() {
     if (busy) return;
     busy = true;
+    askBtn.disabled = true;
+    takeQuestion();
 
     hint.innerHTML = 'Шар думает…';
     restart(die, 'hide');
@@ -397,9 +458,9 @@
 
       setTimeout(() => {
         notify(a.k === 'yes' ? 'success' : a.k === 'no' ? 'error' : 'warning');
-        hint.innerHTML = 'Ещё вопрос? <b>Потряси</b> снова';
+        hint.innerHTML = 'Ещё вопрос? Напиши новый или <b>потряси</b> снова';
       }, 750);
-      setTimeout(() => { busy = false; }, 1300);
+      setTimeout(() => { busy = false; askBtn.disabled = false; }, 1300);
     }, SHAKE_ANIM_MS);
   }
 
@@ -465,6 +526,21 @@
 
   if (inTelegram && v('8.0') && tg.Accelerometer) startTelegramAccel();
   else startDeviceMotion();
+
+  /* ================== отправка вопроса ================== */
+  askForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (busy) return;
+    if (!qInput.value.trim()) {
+      // пустое поле — легонько «качаем головой»
+      askForm.classList.remove('error'); void askForm.offsetWidth;
+      askForm.classList.add('error');
+      impact('light');
+      qInput.focus();
+      return;
+    }
+    ask();
+  });
 
   /* ================== нажатие на шар ================== */
   ball.addEventListener('click', () => {
