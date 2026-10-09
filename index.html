@@ -420,12 +420,14 @@
   }
 
   // 1) Нативный акселерометр Telegram (Bot API 8.0+) — работает и на iOS, и на Android
+  let usingTgAccel = false;
   function startTelegramAccel() {
+    usingTgAccel = true;
     tg.onEvent('accelerometerChanged', () => {
       const A = tg.Accelerometer;
       onAccel(A.x, A.y, A.z);
     });
-    tg.onEvent('accelerometerFailed', () => startDeviceMotion());
+    tg.onEvent('accelerometerFailed', () => { usingTgAccel = false; startDeviceMotion(); });
     tg.Accelerometer.start({ refresh_rate: 40 });
   }
 
@@ -466,7 +468,9 @@
 
   /* ================== нажатие на шар ================== */
   ball.addEventListener('click', () => {
-    requestMotionPermission();   // заодно попросим доступ к датчику на iOS
+    // браузерный датчик просим, только если нет акселерометра Telegram
+    // (иначе iOS покажет системное окно с адресом сайта)
+    if (!usingTgAccel) requestMotionPermission();
     ask();
   });
 })();
