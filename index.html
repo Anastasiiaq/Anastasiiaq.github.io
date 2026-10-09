@@ -188,12 +188,16 @@
     position:absolute;left:-6%;top:-4%;z-index:3;
     padding:9px 14px;border-radius:18px 18px 18px 4px;
     background:#fff;color:#1b2147;font-weight:800;font-size:clamp(11px,3.3vw,14px);
-    text-transform:uppercase;line-height:1.1;max-width:58%;
+    text-transform:uppercase;line-height:1.1;max-width:66%;
     transform:rotate(-8deg);box-shadow:0 8px 24px rgba(0,0,0,.35);
     transition:opacity .35s, transform .35s;
-    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  /* обрезка — на внутреннем элементе, иначе в отступ облачка «подглядывает» лишняя строка */
+  .q-text{
+    display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;
     overflow-wrap:anywhere;
   }
+  .q-text.measure{display:block;-webkit-line-clamp:unset;overflow:visible}
 
   /* ---------- поле для вопроса ---------- */
   .ask{
@@ -261,7 +265,7 @@
 
     <div class="stage" id="stage">
       <div class="glow"></div>
-      <div class="question" id="question">Мне писать бывшему?</div>
+      <div class="question" id="question"><span class="q-text" id="qText">Мне писать бывшему?</span></div>
       <div class="shadow"></div>
       <div class="float">
         <div class="ball" id="ball" role="button" aria-label="Потрясти шар">
@@ -380,13 +384,35 @@
   }
   // меняющиеся вопросы-примеры
   let qi = 0, userQuestion = null;
+  const qText = $('qText');
+
+  // Уменьшаем шрифт облачка, пока вопрос не уляжется в 4 строки.
+  // Если и на самом мелком не влезает — сработает обрезка с многоточием.
+  function fitQuestion() {
+    const base = Math.min(14, Math.max(11, window.innerWidth * 0.033));
+    const minFs = 9;
+    const MAX_LINES = 4;
+    qText.classList.add('measure');
+    let fs = base;
+    for (; fs >= minFs; fs -= 0.5) {
+      questionEl.style.fontSize = fs + 'px';
+      const lines = Math.round(qText.offsetHeight / (fs * 1.1));
+      if (lines <= MAX_LINES) break;
+    }
+    if (fs < minFs) questionEl.style.fontSize = minFs + 'px';
+    qText.classList.remove('measure');
+  }
+
   function showQuestion(text) {
     questionEl.classList.add('fade');
     setTimeout(() => {
-      questionEl.textContent = text;
+      qText.textContent = text;
+      fitQuestion();
       questionEl.classList.remove('fade');
     }, 380);
   }
+  fitQuestion();
+  window.addEventListener('resize', fitQuestion);
   setInterval(() => {
     if (userQuestion) return;     // свой вопрос уже задан — примеры больше не крутим
     qi = (qi + 1) % QUESTIONS.length;
