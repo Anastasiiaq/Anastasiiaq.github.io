@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Магический шар</title>
+<!-- Telegram Mini Apps SDK -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --s: min(78vw, 340px, 50vh);          /* размер шара */
+    --w: calc(var(--s) * 0.52);           /* размер окошка */
+    --accent: #3d6bff;
+    --accent-2: #1d3bd1;
+    --text: #eef1ff;
+    --muted: #9aa6dc;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{
+    margin:0;height:100%;overflow:hidden;
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,sans-serif;
+    user-select:none;-webkit-user-select:none;touch-action:none;
+    background:#060a1c;
+  }
+  body{
+    background:
+      radial-gradient(90% 60% at 50% 45%, #2a3f9c 0%, #14205a 40%, #070b1f 75%, #04060f 100%);
+  }
+
+  /* ---------- звёздочки ---------- */
+  .sky{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+  .star{position:absolute;width:3px;height:3px;border-radius:50%;background:#fff;
+        box-shadow:0 0 6px 1px rgba(160,190,255,.9);opacity:0;animation:twinkle 4s ease-in-out infinite}
+  .star.big::before,.star.big::after{content:"";position:absolute;left:50%;top:50%;background:#fff;
+        transform:translate(-50%,-50%);border-radius:2px}
+  .star.big::before{width:1.5px;height:16px}
+  .star.big::after{width:16px;height:1.5px}
+  @keyframes twinkle{0%,100%{opacity:0;transform:scale(.6)}50%{opacity:1;transform:scale(1)}}
+
+  /* ---------- раскладка ---------- */
+  .app{
+    position:relative;height:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:clamp(16px,4vh,36px);
+    padding:calc(16px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  header{text-align:center;line-height:1}
+  .title-small{
+    font-family:Georgia,"Times New Roman",serif;font-style:italic;
+    font-size:clamp(22px,6vw,30px);color:#c9d3ff;letter-spacing:.02em;
+  }
+  .title-big{
+    font-weight:900;font-size:clamp(54px,17vw,84px);letter-spacing:.04em;margin-top:2px;
+    background:linear-gradient(180deg,#8fb0ff 0%,#3d6bff 45%,#1a2fa8 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 6px 24px rgba(61,107,255,.45));
+  }
+
+  /* ---------- сцена с шаром ---------- */
+  .stage{position:relative;width:var(--s);height:calc(var(--s) * 1.12)}
+  .glow{
+    position:absolute;left:50%;top:44%;width:150%;height:150%;transform:translate(-50%,-50%);
+    background:radial-gradient(circle,rgba(70,120,255,.45) 0%,rgba(70,120,255,0) 60%);
+    pointer-events:none;transition:opacity .4s;
+  }
+  .stage.active .glow{animation:pulse .5s ease-in-out infinite alternate}
+  @keyframes pulse{from{opacity:.7}to{opacity:1.2;transform:translate(-50%,-50%) scale(1.08)}}
+
+  .shadow{
+    position:absolute;left:50%;bottom:0;width:62%;height:7%;transform:translateX(-50%);
+    background:radial-gradient(ellipse,rgba(0,0,0,.7) 0%,rgba(0,0,0,0) 70%);
+    animation:shadowFloat 5s ease-in-out infinite;
+  }
+  @keyframes shadowFloat{50%{transform:translateX(-50%) scale(.88);opacity:.7}}
+
+  .float{position:absolute;left:0;top:0;width:var(--s);height:var(--s);animation:float 5s ease-in-out infinite}
+  @keyframes float{50%{transform:translateY(-10px)}}
+
+  .ball{
+    position:relative;width:100%;height:100%;border-radius:50%;cursor:pointer;
+    background:
+      radial-gradient(circle at 32% 26%, #5a6075 0%, #23252f 14%, #0b0c11 42%, #000 72%);
+    box-shadow:
+      inset -22px -30px 60px rgba(80,120,255,.38),
+      inset 14px 18px 40px rgba(255,255,255,.07),
+      0 30px 90px rgba(30,60,220,.5);
+  }
+  .ball.shaking{animation:shake .95s cubic-bezier(.36,.07,.19,.97) both}
+  @keyframes shake{
+    0%{transform:translate(0,0) rotate(0)}
+    8%{transform:translate(-16px,7px) rotate(-9deg)}
+    18%{transform:translate(14px,-9px) rotate(8deg)}
+    28%{transform:translate(-12px,-5px) rotate(-7deg)}
+    38%{transform:translate(16px,9px) rotate(10deg)}
+    48%{transform:translate(-14px,5px) rotate(-8deg)}
+    58%{transform:translate(11px,-7px) rotate(6deg)}
+    68%{transform:translate(-8px,6px) rotate(-4deg)}
+    78%{transform:translate(6px,-3px) rotate(3deg)}
+    90%{transform:translate(-3px,2px) rotate(-1deg)}
+    100%{transform:translate(0,0) rotate(0)}
+  }
+  .shine{
+    position:absolute;left:14%;top:7%;width:46%;height:28%;border-radius:50%;
+    background:radial-gradient(ellipse at 50% 40%,rgba(255,255,255,.55) 0%,rgba(255,255,255,.12) 45%,rgba(255,255,255,0) 72%);
+    transform:rotate(-28deg);pointer-events:none;
+  }
+  .rim{
+    position:absolute;inset:0;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle at 70% 82%,rgba(120,160,255,.35) 0%,rgba(120,160,255,0) 30%);
+  }
+
+  /* ---------- окошко ---------- */
+  .window{
+    position:absolute;left:50%;top:50%;width:var(--w);height:var(--w);
+    margin:calc(var(--w) / -2) 0 0 calc(var(--w) / -2);
+    border-radius:50%;overflow:hidden;display:grid;place-items:center;
+    background:radial-gradient(circle at 50% 50%,#0c1a55 0%,#050a26 55%,#010210 100%);
+    box-shadow:
+      0 0 0 5px #08080c,
+      0 0 0 7px rgba(255,255,255,.14),
+      0 0 0 9px #050508,
+      inset 0 10px 24px rgba(0,0,0,.95);
+  }
+  .liquid{
+    position:absolute;inset:-20%;opacity:.6;
+    background:
+      radial-gradient(circle at 30% 30%,rgba(60,100,255,.35) 0%,transparent 35%),
+      radial-gradient(circle at 70% 65%,rgba(30,60,200,.35) 0%,transparent 40%);
+    animation:swirl 12s linear infinite;
+  }
+  .stage.active .liquid{animation-duration:1.2s;opacity:.9}
+  @keyframes swirl{to{transform:rotate(360deg)}}
+
+  .bubble-dot{
+    position:absolute;bottom:-10%;width:6px;height:6px;border-radius:50%;
+    background:rgba(170,200,255,.55);opacity:0;
+  }
+  .stage.active .bubble-dot{animation:rise 1s ease-in infinite}
+  @keyframes rise{
+    0%{opacity:0;transform:translateY(0) scale(.6)}
+    20%{opacity:.9}
+    100%{opacity:0;transform:translateY(calc(var(--w) * -1.1)) scale(1.2)}
+  }
+
+  .glass{
+    position:absolute;inset:0;border-radius:50%;pointer-events:none;
+    background:linear-gradient(160deg,rgba(255,255,255,.16) 0%,rgba(255,255,255,0) 35%);
+  }
+
+  /* ---------- треугольник с ответом ---------- */
+  .die{
+    position:relative;width:82%;height:74%;
+    display:flex;align-items:flex-end;justify-content:center;
+    padding-bottom:13%;
+  }
+  .die svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+  .die .txt{
+    position:relative;width:58%;min-height:44%;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-weight:800;text-transform:uppercase;line-height:1.05;letter-spacing:.02em;
+    color:#fff;text-shadow:0 1px 6px rgba(0,20,120,.6);
+    font-size:calc(var(--w) * 0.075);
+    word-break:normal;hyphens:auto;
+  }
+  .die .txt.xl{font-size:calc(var(--w) * 0.15)}
+  .die .txt.l {font-size:calc(var(--w) * 0.105)}
+  .die .txt.m {font-size:calc(var(--w) * 0.083)}
+  .die .txt.s {font-size:calc(var(--w) * 0.07)}
+
+  .die.hide{animation:sink .45s ease-in forwards}
+  @keyframes sink{
+    to{opacity:0;transform:scale(.5) rotate(45deg) translateY(10%);filter:blur(6px)}
+  }
+  .die.show{
+    animation:
+      surface 1.4s cubic-bezier(.2,.8,.2,1) both,
+      bob 5s ease-in-out 1.4s infinite;
+  }
+  @keyframes surface{
+    0%  {opacity:0;transform:scale(.35) rotate(-35deg);filter:blur(10px) brightness(.4)}
+    55% {opacity:.85;transform:scale(1.06) rotate(5deg);filter:blur(1.5px) brightness(.9)}
+    80% {transform:scale(.98) rotate(-2deg);filter:blur(0) brightness(1)}
+    100%{opacity:1;transform:scale(1) rotate(0)}
+  }
+  @keyframes bob{
+    0%,100%{transform:rotate(0) translateY(0)}
+    33%{transform:rotate(1.8deg) translateY(1.5%)}
+    66%{transform:rotate(-1.5deg) translateY(-1%)}
+  }
+  .die.idle .txt{font-size:calc(var(--w) * 0.22);padding-top:6%}
+
+  /* ---------- облачко с вопросом ---------- */
+  .question{
+    position:absolute;left:-6%;top:-4%;z-index:3;
+    padding:9px 14px;border-radius:18px 18px 18px 4px;
+    background:#fff;color:#1b2147;font-weight:800;font-size:clamp(11px,3.3vw,14px);
+    text-transform:uppercase;line-height:1.1;max-width:58%;
+    transform:rotate(-8deg);box-shadow:0 8px 24px rgba(0,0,0,.35);
+    transition:opacity .35s, transform .35s;
+  }
+  .question.fade{opacity:0;transform:rotate(-8deg) translateY(-6px)}
+
+  /* ---------- подсказка ---------- */
+  .hint{
+    text-align:center;color:var(--muted);font-size:15px;min-height:2.6em;max-width:320px;
+    line-height:1.35;transition:color .3s;
+  }
+  .hint b{color:var(--text);font-weight:600}
+  .btn{
+    border:0;border-radius:14px;padding:12px 22px;font:600 15px/1 inherit;color:#fff;
+    background:linear-gradient(180deg,var(--accent),var(--accent-2));
+    box-shadow:0 8px 24px rgba(61,107,255,.4);cursor:pointer;display:none;
+  }
+  .btn.visible{display:inline-block}
+</style>
+</head>
+<body>
+  <div class="sky" id="sky"></div>
+
+  <main class="app">
+    <header>
+      <div class="title-small">магический</div>
+      <div class="title-big">ШАР</div>
+    </header>
+
+    <div class="stage" id="stage">
+      <div class="glow"></div>
+      <div class="question" id="question">Мне писать бывшему?</div>
+      <div class="shadow"></div>
+      <div class="float">
+        <div class="ball" id="ball" role="button" aria-label="Потрясти шар">
+          <div class="window">
+            <div class="liquid"></div>
+            <div id="bubbles"></div>
+            <div class="die idle" id="die">
+              <svg viewBox="0 0 100 88" preserveAspectRatio="none" aria-hidden="true">
+                <defs>
+                  <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#5c86ff"/>
+                    <stop offset="1" stop-color="#1c3ccf"/>
+                  </linearGradient>
+                </defs>
+                <path d="M50 3 L97 85 L3 85 Z" fill="url(#g)" stroke="#7aa0ff" stroke-width="1.2"
+                      stroke-linejoin="round"/>
+              </svg>
+              <div class="txt" id="answer">?</div>
+            </div>
+            <div class="glass"></div>
+          </div>
+          <div class="rim"></div>
+          <div class="shine"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hint" id="hint">Задай вопрос про себя и <b>потряси телефон</b><br>или нажми на шар</div>
+    <button class="btn" id="permBtn">Разрешить датчик движения</button>
+  </main>
+
+<script>
+(() => {
+  /* ================== настройки ================== */
+  const SHAKE = {
+    threshold: 14,    // насколько резким должен быть рывок (м/с², сумма по осям)
+    peaks: 3,         // сколько рывков нужно...
+    windowMs: 900,    // ...за это время
+    minGapMs: 90      // минимальный промежуток между рывками
+  };
+  const SHAKE_ANIM_MS = 950;
+
+  const ANSWERS = [
+    // да
+    {t:'Бесспорно', k:'yes'}, {t:'Предрешено', k:'yes'}, {t:'Никаких сомнений', k:'yes'},
+    {t:'Определённо да', k:'yes'}, {t:'Можешь быть уверен', k:'yes'}, {t:'Мне кажется — да', k:'yes'},
+    {t:'Вероятнее всего', k:'yes'}, {t:'Хорошие перспективы', k:'yes'}, {t:'Знаки говорят — да', k:'yes'},
+    {t:'Да', k:'yes'},
+    // не знаю
+    {t:'Пока не ясно, попробуй снова', k:'maybe'}, {t:'Спроси позже', k:'maybe'},
+    {t:'Лучше не рассказывать', k:'maybe'}, {t:'Сейчас нельзя предсказать', k:'maybe'},
+    {t:'Сосредоточься и спроси опять', k:'maybe'},
+    // нет
+    {t:'Даже не думай', k:'no'}, {t:'Нет', k:'no'}, {t:'По моим данным — нет', k:'no'},
+    {t:'Перспективы не очень', k:'no'}, {t:'Весьма сомнительно', k:'no'}
+  ];
+
+  const QUESTIONS = [
+    'Мне писать бывшему?', 'Повезёт ли мне завтра?', 'Брать ли отпуск?',
+    'Завести ли кота?', 'Сдам ли я экзамен?', 'Съесть ещё пиццу?'
+  ];
+
+  /* ================== Telegram ================== */
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const inTelegram = !!(tg && tg.initData !== undefined && tg.platform && tg.platform !== 'unknown');
+  const v = (ver) => !!(tg && tg.isVersionAtLeast && tg.isVersionAtLeast(ver));
+
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    if (v('6.1')) { try { tg.setHeaderColor('#070b1f'); tg.setBackgroundColor('#04060f'); } catch(e){} }
+    if (v('7.7')) { try { tg.disableVerticalSwipes(); } catch(e){} }   // чтобы встряска не сворачивала приложение
+    if (v('8.0')) { try { tg.lockOrientation(); } catch(e){} }         // чтобы экран не поворачивался при тряске
+  }
+
+  /* ================== вибрация ================== */
+  const canTgHaptic = !!(tg && tg.HapticFeedback && v('6.1'));
+  function impact(style) {
+    if (canTgHaptic) tg.HapticFeedback.impactOccurred(style);       // light | medium | heavy | rigid | soft
+    else if (navigator.vibrate) navigator.vibrate(style === 'heavy' ? 30 : 15);
+  }
+  function notify(type) {
+    if (canTgHaptic) tg.HapticFeedback.notificationOccurred(type);  // success | warning | error
+    else if (navigator.vibrate) navigator.vibrate(
+      type === 'success' ? [40, 70, 40] : type === 'error' ? [120, 60, 120] : 80
+    );
+  }
+
+  /* ================== DOM ================== */
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage'), ball = $('ball'), die = $('die'), answerEl = $('answer');
+  const hint = $('hint'), permBtn = $('permBtn'), questionEl = $('question');
+
+  // звёзды
+  const sky = $('sky');
+  for (let i = 0; i < 34; i++) {
+    const s = document.createElement('div');
+    s.className = 'star' + (i % 7 === 0 ? ' big' : '');
+    s.style.left = Math.random() * 100 + '%';
+    s.style.top = Math.random() * 100 + '%';
+    s.style.animationDelay = (Math.random() * 4).toFixed(2) + 's';
+    s.style.animationDuration = (3 + Math.random() * 3).toFixed(2) + 's';
+    sky.appendChild(s);
+  }
+  // пузырьки в жидкости
+  const bubbles = $('bubbles');
+  for (let i = 0; i < 9; i++) {
+    const b = document.createElement('span');
+    b.className = 'bubble-dot';
+    b.style.left = (10 + Math.random() * 80) + '%';
+    b.style.animationDelay = (Math.random() * 0.9).toFixed(2) + 's';
+    const size = 3 + Math.random() * 5;
+    b.style.width = b.style.height = size + 'px';
+    bubbles.appendChild(b);
+  }
+  // меняющиеся вопросы-примеры
+  let qi = 0;
+  setInterval(() => {
+    questionEl.classList.add('fade');
+    setTimeout(() => {
+      qi = (qi + 1) % QUESTIONS.length;
+      questionEl.textContent = QUESTIONS[qi];
+      questionEl.classList.remove('fade');
+    }, 380);
+  }, 4500);
+
+  /* ================== логика шара ================== */
+  let busy = false, lastIdx = -1;
+
+  function sizeClass(text) {
+    const n = text.length;
+    return n <= 3 ? 'xl' : n <= 10 ? 'l' : n <= 18 ? 'm' : 's';
+  }
+
+  function restart(el, cls) {
+    el.classList.remove('show', 'hide', 'idle');
+    void el.offsetWidth;          // перезапуск CSS-анимации
+    el.classList.add(cls);
+  }
+
+  function ask() {
+    if (busy) return;
+    busy = true;
+
+    hint.innerHTML = 'Шар думает…';
+    restart(die, 'hide');
+    stage.classList.add('active');
+    ball.classList.remove('shaking'); void ball.offsetWidth;
+    ball.classList.add('shaking');
+
+    // ритм вибрации во время тряски
+    let n = 0;
+    const iv = setInterval(() => impact(n++ % 2 ? 'medium' : 'heavy'), 110);
+
+    setTimeout(() => {
+      clearInterval(iv);
+      ball.classList.remove('shaking');
+      stage.classList.remove('active');
+
+      let idx;
+      do { idx = Math.floor(Math.random() * ANSWERS.length); } while (idx === lastIdx);
+      lastIdx = idx;
+      const a = ANSWERS[idx];
+
+      answerEl.textContent = a.t;
+      answerEl.className = 'txt ' + sizeClass(a.t);
+      restart(die, 'show');
+
+      setTimeout(() => {
+        notify(a.k === 'yes' ? 'success' : a.k === 'no' ? 'error' : 'warning');
+        hint.innerHTML = 'Ещё вопрос? <b>Потряси</b> снова';
+      }, 750);
+      setTimeout(() => { busy = false; }, 1300);
+    }, SHAKE_ANIM_MS);
+  }
+
+  /* ================== детектор встряски ================== */
+  let last = null, peaks = [];
+  function onAccel(x, y, z) {
+    if (x == null || y == null || z == null) return;
+    if (last) {
+      const d = Math.abs(x - last.x) + Math.abs(y - last.y) + Math.abs(z - last.z);
+      if (d > SHAKE.threshold) {
+        const now = Date.now();
+        peaks = peaks.filter(t => now - t < SHAKE.windowMs);
+        if (!peaks.length || now - peaks[peaks.length - 1] > SHAKE.minGapMs) peaks.push(now);
+        if (peaks.length >= SHAKE.peaks) { peaks = []; ask(); }
+      }
+    }
+    last = { x, y, z };
+  }
+
+  // 1) Нативный акселерометр Telegram (Bot API 8.0+) — работает и на iOS, и на Android
+  function startTelegramAccel() {
+    tg.onEvent('accelerometerChanged', () => {
+      const A = tg.Accelerometer;
+      onAccel(A.x, A.y, A.z);
+    });
+    tg.onEvent('accelerometerFailed', () => startDeviceMotion());
+    tg.Accelerometer.start({ refresh_rate: 40 });
+  }
+
+  // 2) Запасной вариант — обычный браузерный DeviceMotion
+  let motionOn = false;
+  function listenMotion() {
+    if (motionOn) return;
+    motionOn = true;
+    window.addEventListener('devicemotion', (e) => {
+      const a = e.accelerationIncludingGravity || e.acceleration;
+      if (a) onAccel(a.x, a.y, a.z);
+    });
+  }
+  function startDeviceMotion() {
+    if (typeof DeviceMotionEvent === 'undefined') return;
+    // iOS Safari требует разрешение по нажатию пользователя
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      permBtn.classList.add('visible');
+    } else {
+      listenMotion();
+    }
+  }
+  function requestMotionPermission() {
+    if (typeof DeviceMotionEvent === 'undefined' ||
+        typeof DeviceMotionEvent.requestPermission !== 'function' || motionOn) return;
+    DeviceMotionEvent.requestPermission()
+      .then(state => {
+        permBtn.classList.remove('visible');
+        if (state === 'granted') listenMotion();
+        else hint.innerHTML = 'Без датчика движения — просто <b>нажми на шар</b>';
+      })
+      .catch(() => permBtn.classList.remove('visible'));
+  }
+  permBtn.addEventListener('click', requestMotionPermission);
+
+  if (inTelegram && v('8.0') && tg.Accelerometer) startTelegramAccel();
+  else startDeviceMotion();
+
+  /* ================== нажатие на шар ================== */
+  ball.addEventListener('click', () => {
+    requestMotionPermission();   // заодно попросим доступ к датчику на iOS
+    ask();
+  });
+})();
+</script>
+</body>
+</html>
