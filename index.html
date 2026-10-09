@@ -132,6 +132,7 @@
   .stage.active .liquid{animation-duration:1.2s;opacity:.9}
   @keyframes swirl{to{transform:rotate(360deg)}}
 
+  #bubbles{position:absolute;inset:0;pointer-events:none}
   .bubble-dot{
     position:absolute;bottom:-10%;width:6px;height:6px;border-radius:50%;
     background:rgba(170,200,255,.55);opacity:0;
@@ -149,24 +150,17 @@
   }
 
   /* ---------- треугольник с ответом ---------- */
-  .die{
-    position:relative;width:82%;height:74%;
-    display:flex;align-items:flex-end;justify-content:center;
-    padding-bottom:13%;
-  }
+  /* треугольник чуть больше окошка — углы прячутся за краем, как у настоящего шара */
+  .die{position:relative;width:100%;height:88%}
   .die svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+  /* размер шрифта, ширину и положение текста подбирает JS (fitAnswer) */
   .die .txt{
-    position:relative;width:58%;min-height:44%;
-    display:flex;align-items:center;justify-content:center;text-align:center;
-    font-weight:800;text-transform:uppercase;line-height:1.05;letter-spacing:.02em;
+    position:absolute;left:0;top:0;width:50%;
+    text-align:center;white-space:normal;overflow-wrap:normal;
+    font-weight:800;text-transform:uppercase;line-height:1;letter-spacing:0;
     color:#fff;text-shadow:0 1px 6px rgba(0,20,120,.6);
-    font-size:calc(var(--w) * 0.075);
-    word-break:normal;hyphens:auto;
   }
-  .die .txt.xl{font-size:calc(var(--w) * 0.15)}
-  .die .txt.l {font-size:calc(var(--w) * 0.105)}
-  .die .txt.m {font-size:calc(var(--w) * 0.083)}
-  .die .txt.s {font-size:calc(var(--w) * 0.07)}
+  .die .txt span{white-space:nowrap}
 
   .die.hide{animation:sink .45s ease-in forwards}
   @keyframes sink{
@@ -188,7 +182,6 @@
     33%{transform:rotate(1.8deg) translateY(1.5%)}
     66%{transform:rotate(-1.5deg) translateY(-1%)}
   }
-  .die.idle .txt{font-size:calc(var(--w) * 0.22);padding-top:6%}
 
   /* ---------- облачко с вопросом ---------- */
   .question{
@@ -415,10 +408,82 @@
   /* ================== логика шара ================== */
   let busy = false, lastIdx = -1;
 
-  function sizeClass(text) {
-    const n = text.length;
-    return n <= 3 ? 'xl' : n <= 10 ? 'l' : n <= 18 ? 'm' : 's';
+  /* ---------- текст внутри треугольника ---------- */
+  // Геометрия треугольника из SVG (viewBox 100×88): вершина (50,3), основание y=85, x от 3 до 97.
+  function setAnswer(text) {
+    answerEl.textContent = '';
+    text.split(' ').forEach((word, i) => {
+      if (i) answerEl.appendChild(document.createTextNode(' '));
+      const s = document.createElement('span');
+      s.textContent = word;
+      answerEl.appendChild(s);
+    });
+    fitAnswer();
   }
+
+  // Подбираем самый крупный шрифт, при котором каждое слово целиком лежит
+  // и внутри треугольника, и внутри круглого окошка.
+  // offset* не зависят от CSS-трансформаций, поэтому подбор работает и во время анимации.
+  function fitAnswer() {
+    const W = die.offsetWidth, H = die.offsetHeight;
+    if (!W || !H) return;
+    const win = die.parentElement;
+    const R = win.offsetWidth / 2;
+    const ccx = W / 2, ccy = H / 2;                 // центр окошка в координатах треугольника
+    const apexY = H * 3 / 88, baseY = H * 85 / 88;
+    const halfBase = W * 0.47;
+    const pad = W * 0.045;                          // отступ от краёв
+    const words = answerEl.children;
+    const widths = [0.34, 0.42, 0.5, 0.58, 0.66, 0.74, 0.82];
+    const heights = [0.6, 0.68, 0.76];              // где по высоте треугольника центрировать текст
+
+    const inCircle = (x, y) => Math.hypot(x - ccx, y - ccy) <= R - pad;
+
+    function tryLayout(fs, wf, hf) {
+      const targetY = apexY + (baseY - apexY) * hf;
+      answerEl.style.fontSize = fs + 'px';
+      const bw = W * wf;
+      answerEl.style.width = bw + 'px';
+      const left = ccx - bw / 2;
+      answerEl.style.left = left + 'px';
+      const bh = answerEl.offsetHeight;
+      const bottom = Math.min(targetY + bh / 2, baseY - pad);
+      const top = bottom - bh;
+      answerEl.style.top = top + 'px';
+      for (const s of words) {
+        // небольшая подрезка сверху/снизу: у заглавных букв нет выносных элементов
+        const l = left + s.offsetLeft, r = l + s.offsetWidth;
+        const t = top + s.offsetTop + s.offsetHeight * 0.12;
+        const b = top + s.offsetTop + s.offsetHeight * 0.92;
+        const hw = (t - apexY) / (baseY - apexY) * halfBase - pad * 1.6;
+        if (hw <= 0 || l < ccx - hw || r > ccx + hw) return false;
+        if (b > baseY - pad) return false;
+        if (!inCircle(l, t) || !inCircle(r, t) || !inCircle(l, b) || !inCircle(r, b)) return false;
+      }
+      return true;
+    }
+
+    // для каждой ширины и высоты ищем двоичным поиском самый крупный шрифт, берём лучший вариант
+    const maxFs = W * 0.2, minFs = W * 0.05;
+    let best = null;
+    for (const hf of heights) {
+      for (const wf of widths) {
+        if (!tryLayout(minFs, wf, hf)) continue;
+        let lo = minFs, hi = maxFs;
+        if (best && !tryLayout(best.fs + 0.25, wf, hf)) continue;  // не лучше уже найденного
+        while (hi - lo > 0.25) {
+          const mid = (lo + hi) / 2;
+          if (tryLayout(mid, wf, hf)) lo = mid; else hi = mid;
+        }
+        if (!best || lo > best.fs) best = { fs: lo, wf, hf };
+      }
+    }
+    if (best) { tryLayout(best.fs, best.wf, best.hf); return true; }
+    tryLayout(minFs, widths[widths.length - 1], heights[1]);   // крайний случай
+    return false;
+  }
+  setAnswer('?');
+  window.addEventListener('resize', fitAnswer);
 
   function restart(el, cls) {
     el.classList.remove('show', 'hide', 'idle');
@@ -452,8 +517,7 @@
       lastIdx = idx;
       const a = ANSWERS[idx];
 
-      answerEl.textContent = a.t;
-      answerEl.className = 'txt ' + sizeClass(a.t);
+      setAnswer(a.t);
       restart(die, 'show');
 
       setTimeout(() => {
